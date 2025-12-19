@@ -3,7 +3,7 @@
 namespace amirkateb\TGCoreClient\Gateway;
 
 use Illuminate\Support\Facades\Http;
-use Kowork\TGCoreClient\Contracts\BotSecretResolver;
+use amirkateb\TGCoreClient\Contracts\BotSecretResolver;
 
 class TGCoreGatewayClient
 {
