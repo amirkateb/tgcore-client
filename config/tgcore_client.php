@@ -11,6 +11,11 @@ return [
         'replay_ttl_seconds' => (int) env('TGCORE_CLIENT_REPLAY_TTL_SECONDS', 600),
     ],
 
+    'rate_limits' => [
+        'ingest_per_minute' => (int) env('TGCORE_CLIENT_INGEST_RATE_PER_MINUTE', 120),
+        'gateway_per_minute' => (int) env('TGCORE_CLIENT_GATEWAY_RATE_PER_MINUTE', 120),
+    ],
+
     'resolver' => env('TGCORE_CLIENT_RESOLVER', 'config'),
 
     'bots' => [
