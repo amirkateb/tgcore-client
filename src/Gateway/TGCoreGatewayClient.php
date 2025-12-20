@@ -3,6 +3,7 @@
 namespace amirkateb\TGCoreClient\Gateway;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use amirkateb\TGCoreClient\Contracts\BotSecretResolver;
 
 class TGCoreGatewayClient
@@ -203,6 +204,11 @@ class TGCoreGatewayClient
 
     private function postJson(string $botUuid, string $path, array $payload): array
     {
+        $limitRes = $this->enforceGatewayRateLimit($botUuid);
+        if ($limitRes !== null) {
+            return $limitRes;
+        }
+
         $base = (string) config('tgcore_client.gateway.base_url', '');
         $prefix = (string) config('tgcore_client.gateway.path_prefix', '/api/tgcore/consumer');
 
@@ -222,6 +228,10 @@ class TGCoreGatewayClient
         $url = $base . $prefix . $path;
 
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (!is_string($body) || $body === '') {
+            return ['ok' => false, 'error' => 'json_encode_failed'];
+        }
+
         $ts = time();
         $sig = 'sha256=' . hash_hmac('sha256', $ts . "\n" . $body, $secret);
 
@@ -255,6 +265,11 @@ class TGCoreGatewayClient
 
     private function postMultipart(string $botUuid, string $path, array $fields, array $files): array
     {
+        $limitRes = $this->enforceGatewayRateLimit($botUuid);
+        if ($limitRes !== null) {
+            return $limitRes;
+        }
+
         $base = (string) config('tgcore_client.gateway.base_url', '');
         $prefix = (string) config('tgcore_client.gateway.path_prefix', '/api/tgcore/consumer');
 
@@ -276,6 +291,10 @@ class TGCoreGatewayClient
         $files = $this->normalizeFiles($files);
 
         $canonical = $this->canonicalJson($fields);
+        if (!is_string($canonical) || $canonical === '') {
+            return ['ok' => false, 'error' => 'canonical_json_failed'];
+        }
+
         $contentHash = $this->filesContentHash($files);
 
         $ts = time();
@@ -283,6 +302,8 @@ class TGCoreGatewayClient
 
         $timeout = (int) config('tgcore_client.gateway.timeout_seconds', 15);
         $connect = (int) config('tgcore_client.gateway.connect_timeout_seconds', 7);
+
+        $handles = [];
 
         try {
             $req = Http::timeout($timeout)->connectTimeout($connect)->withHeaders([
@@ -292,8 +313,6 @@ class TGCoreGatewayClient
             ]);
 
             ksort($files);
-
-            $handles = [];
 
             foreach ($files as $field => $info) {
                 $p = (string) ($info['path'] ?? '');
@@ -308,17 +327,15 @@ class TGCoreGatewayClient
                 }
 
                 $h = fopen($p, 'r');
+                if ($h === false) {
+                    return ['ok' => false, 'error' => 'file_open_failed:' . $field];
+                }
+
                 $handles[] = $h;
                 $req = $req->attach((string) $field, $h, $n);
             }
 
             $res = $req->post($url, $fields);
-
-            foreach ($handles as $h) {
-                if (is_resource($h)) {
-                    fclose($h);
-                }
-            }
 
             return [
                 'ok' => $res->ok() && (bool) ($res->json('ok') ?? false),
@@ -330,7 +347,35 @@ class TGCoreGatewayClient
                 'ok' => false,
                 'error' => $e->getMessage(),
             ];
+        } finally {
+            foreach ($handles as $h) {
+                if (is_resource($h)) {
+                    fclose($h);
+                }
+            }
         }
+    }
+
+    private function enforceGatewayRateLimit(string $botUuid): ?array
+    {
+        $limit = (int) config('tgcore_client.rate_limits.gateway_per_minute', 120);
+        if ($limit <= 0) {
+            return null;
+        }
+
+        $key = 'tgcore:gateway:client:' . $botUuid;
+
+        if (RateLimiter::tooManyAttempts($key, $limit)) {
+            return [
+                'ok' => false,
+                'error' => 'rate_limited_client',
+                'retry_after_seconds' => RateLimiter::availableIn($key),
+            ];
+        }
+
+        RateLimiter::hit($key, 60);
+
+        return null;
     }
 
     private function normalizeFiles(array $files): array
@@ -372,7 +417,8 @@ class TGCoreGatewayClient
     private function canonicalJson(array $data): string
     {
         $normalized = $this->normalize($data);
-        return json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $j = json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return is_string($j) ? $j : '';
     }
 
     private function normalize(mixed $v): mixed
