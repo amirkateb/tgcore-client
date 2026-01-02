@@ -300,7 +300,7 @@ class TGCoreGatewayClient
         $ts = time();
         $sig = 'sha256=' . hash_hmac('sha256', $ts . "\n" . $contentHash . "\n" . $canonical, $secret);
 
-        $timeout = (int) config('tgcore_client.gateway.timeout_seconds', 15);
+        $timeout = (int) config('tgcore_client.gateway.upload_timeout_seconds', 180);
         $connect = (int) config('tgcore_client.gateway.connect_timeout_seconds', 7);
 
         $handles = [];
