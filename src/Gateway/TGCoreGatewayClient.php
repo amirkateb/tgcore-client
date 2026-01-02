@@ -289,6 +289,7 @@ class TGCoreGatewayClient
         $url = $base . $prefix . $path;
 
         $files = $this->normalizeFiles($files);
+        $fields = $this->prepareMultipartFields($fields);
 
         $canonical = $this->canonicalJson($fields);
         if (!is_string($canonical) || $canonical === '') {
@@ -376,6 +377,60 @@ class TGCoreGatewayClient
         RateLimiter::hit($key, 60);
 
         return null;
+    }
+
+    private function prepareMultipartFields(array $fields): array
+    {
+        $v = $this->stringifyScalars($fields);
+        $v = $this->dropNulls($v);
+        return is_array($v) ? $v : [];
+    }
+
+    private function stringifyScalars(mixed $v): mixed
+    {
+        if (!is_array($v)) {
+            if (is_bool($v)) return $v ? '1' : '0';
+            if (is_int($v) || is_float($v)) return (string) $v;
+            if (is_null($v)) return null;
+            if (is_string($v)) return $v;
+            return (string) $v;
+        }
+
+        $isList = array_keys($v) === range(0, count($v) - 1);
+
+        if ($isList) {
+            return array_map(fn ($x) => $this->stringifyScalars($x), $v);
+        }
+
+        $out = [];
+        foreach ($v as $k => $x) {
+            $out[(string) $k] = $this->stringifyScalars($x);
+        }
+
+        return $out;
+    }
+
+    private function dropNulls(mixed $v): mixed
+    {
+        if (!is_array($v)) {
+            return $v;
+        }
+
+        $isList = array_keys($v) === range(0, count($v) - 1);
+
+        if ($isList) {
+            return array_map(fn ($x) => $this->dropNulls($x), $v);
+        }
+
+        $out = [];
+        foreach ($v as $k => $x) {
+            if ($x === null) {
+                continue;
+            }
+            $out[(string) $k] = $this->dropNulls($x);
+        }
+
+        return $out;
     }
 
     private function normalizeFiles(array $files): array
