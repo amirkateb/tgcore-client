@@ -1,3 +1,5 @@
+# Main Panel
+برای دریافت توکن و پنل به ایدی @amir_katebsaber در تلگرام پیام دهید
 # TGCore Client (amirkateb/tgcore-client)
 
 این پکیج برای پروژه‌های Laravel طراحی شده تا **فقط از طریق TGCore (هسته مرکزی تلگرام)** با تلگرام کار کنند.
